@@ -1,0 +1,60 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Create Capacitor project
+        run: |
+          npm init -y
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          mkdir -p www
+          cp index.html www/index.html
+          npx cap init "NyansanKamba" com.nyansan.kamba --web-dir www
+          npx cap add android
+          npx cap sync android
+      - name: Set app icon and name
+        continue-on-error: true
+        run: |
+          pip install pillow
+          python3 - <<'PY'
+          import os, re
+          from PIL import Image
+          res = 'android/app/src/main/res'
+          fg = Image.open('icon-foreground.png').convert('RGBA')
+          full = Image.open('icon-only.png').convert('RGBA')
+          for d, leg, ad in [('mdpi', 48, 108), ('hdpi', 72, 162), ('xhdpi', 96, 216), ('xxhdpi', 144, 324), ('xxxhdpi', 192, 432)]:
+              p = f'{res}/mipmap-{d}'
+              os.makedirs(p, exist_ok=True)
+              full.resize((leg, leg), Image.LANCZOS).save(f'{p}/ic_launcher.png')
+              full.resize((leg, leg), Image.LANCZOS).save(f'{p}/ic_launcher_round.png')
+              fg.resize((ad, ad), Image.LANCZOS).save(f'{p}/ic_launcher_foreground.png')
+          with open(f'{res}/values/ic_launcher_background.xml', 'w', encoding='utf8') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#212848</color>\n</resources>\n')
+          sp = f'{res}/values/strings.xml'
+          s = open(sp, encoding='utf8').read()
+          s = re.sub(r'(<string name="app_name">).*?(</string>)', r'\g<1>ဉာဏ်စမ်းကမ္ဘာ\g<2>', s)
+          s = re.sub(r'(<string name="title_activity_main">).*?(</string>)', r'\g<1>ဉာဏ်စမ်းကမ္ဘာ\g<2>', s)
+          open(sp, 'w', encoding='utf8').write(s)
+          PY
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyansan-kamba-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
